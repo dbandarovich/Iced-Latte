@@ -1,0 +1,282 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: iced-latte-namespace
+
+---
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: postgresdb-pv
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: "/path/to/folder"
+
+---
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: nginx-pv
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: "/path/to/folder"
+
+---
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: backend-pv
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: "/path/to/folder"
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: latte-nginx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: latte-nginx
+  template:
+    metadata:
+      labels:
+        app: latte-nginx
+    spec:
+      containers:
+      - name: latte-nginx
+        image: nginx:latest
+        ports:
+        - containerPort: 80
+        - containerPort: 443
+        volumeMounts:
+        - name: nginx-conf
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+        - name: nginx-conf-d
+          mountPath: /etc/nginx/conf.d/
+        - name: letsencrypt
+          mountPath: /etc/letsencrypt
+      volumes:
+      - name: nginx-conf
+        hostPath:
+          path: "/path/to/folder"
+      - name: nginx-conf-d
+        hostPath:
+          path: "/path/to/folder"
+      - name: letsencrypt
+        hostPath:
+          path: "/path/to/folder"
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: latte-nginx
+spec:
+  selector:
+    app: latte-nginx
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+    - protocol: TCP
+      port: 443
+      targetPort: 443
+  type: LoadBalancer
+      
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: latte-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: latte-backend
+  template:
+    metadata:
+      labels:
+        app: latte-backend
+    spec:
+      containers:    
+      - name: latte-backend
+        image: zufarexplainedit/iced-latte-backend:development-32bd550
+        env:
+        - name: APP_PROFILE
+          value: "dev"
+        - name: APP_VERSION
+          value: "0.0.1-SNAPSHOT"
+        - name: APP_SERVER_PORT
+          value: "8083"
+        - name: APP_JWT_SECRET
+          value: ""
+        - name: APP_JWT_REFRESH_SECRET
+          value: ""        
+        - name: POSTGRES_USER
+          value: ""
+        - name: POSTGRES_PASSWORD
+          value: ""
+        - name: AWS_ACCESS_KEY
+          value: ""
+        - name: AWS_SECRET_KEY
+          value: ""
+        - name: AWS_REGION
+          value: ""
+        - name: AWS_PRODUCT_BUCKET
+          value: ""
+        - name: AWS_USER_BUCKET
+          value: ""
+        - name: AWS_DEFAULT_PRODUCT_IMAGES_PATH
+          value: ""           
+        ports:
+        - containerPort: 8083        
+        volumeMounts:
+        - name: backend-data
+          mountPath: /usr/app/logs
+        - name: products
+          mountPath: /usr/app/products
+      volumes:
+      - name: backend-data
+        hostPath:
+          path: "/path/to/folder"
+      - name: products
+        hostPath:
+          path: "/path/to/folder"
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: latte-backend
+spec:
+  selector:
+    app: latte-backend
+  type: ClusterIP
+  ports:
+    - protocol: TCP
+      port: 8083
+      targetPort: 8083
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: latte-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: latte-frontend
+  template:
+    metadata:
+      labels:
+        app: latte-frontend
+    spec:
+      containers:
+      - name: latte-frontend
+        image: dzmitrybond/front_test:latest
+        imagePullPolicy: Always
+        ports:
+          - name: http
+            containerPort: 3000
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: latte-frontend
+spec:
+  selector:
+    app: latte-frontend
+  ports:
+    - protocol: TCP
+      port: 3000
+      targetPort: 3000
+
+---
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: latte-postgresdb
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: latte-postgresdb
+  serviceName: latte-postgresdb
+  template:
+    metadata:
+      labels:
+        app: latte-postgresdb
+    spec:
+      containers:
+      - name: latte-postgresdb
+        image: postgres:13.11-bullseye
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_USER
+          value: ""
+        - name: POSTGRES_PASSWORD
+          value: ""
+        volumeMounts:
+        - name: postgres-data
+          mountPath: /var/lib/postgresql/data
+        - name: scripts
+          mountPath: /docker-entrypoint-initdb.d
+      volumes:
+      - name: postgres-data
+        persistentVolumeClaim:
+          claimName: postgresdb-pv
+      - name: scripts
+        hostPath:
+          path: "/path/to/folder"
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 1Gi
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: latte-postgresdb
+spec:
+  selector:
+    app: latte-postgresdb
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
